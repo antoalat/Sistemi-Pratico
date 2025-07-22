@@ -117,3 +117,51 @@ char temp[PATH_MAX];
 snprintf(temp, sizeof(temp), "%s", full_path);  // Copia sicura per dirname()
 char *link_dir = dirname(temp);
 snprintf(resolved_path, sizeof(resolved_path), "%s/%s", link_dir, target);
+
+
+
+#include <stdio.h>
+#include <stdbool.h>
+
+/* Verifica eseguibilità path*/
+bool is_elf(const char *path) {
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+
+    unsigned char magic[4];
+    if (fread(magic, 1, 4, f) != 4) {
+        fclose(f);
+        return false;
+    }
+    fclose(f);
+
+    return magic[0] == 0x7F && magic[1] == 'E' && magic[2] == 'L' && magic[3] == 'F';
+}
+
+
+
+int is_script(const char *path) {
+    FILE *file = fopen(path, "r");
+    if (!file)
+        return 0;
+    
+    char buffer[2] = {0};
+    fread(buffer, 1, 2, file);
+    fclose(file);
+    
+    return memcmp(buffer, "#!", 2) == 0;
+}
+
+// Funzione per determinare se un file è un eseguibile binario ELF
+int is_elf(const char *path) {
+    FILE *file = fopen(path, "r");
+    if (!file) {
+        return 0;
+    }
+    
+    char buffer[5] = {0};
+    fread(buffer, 1, 4, file);
+    fclose(file);
+    
+    return memcmp(buffer, "\x7f""ELF", 4) == 0;
+}

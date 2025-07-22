@@ -1,0 +1,546 @@
+SYSTEM CALLS UNIX
+Ordinare qua per bene tutti gli appunti sulle chiamate di sistema, aggiungere info dai manuali e dalle 
+definizioni delle funzioni.
+Dividi bene le system calls, specifica tutto.
+
+GESTION PROCESSI/ESECUZIONE --> è la più importante
+Come viene identificato un processo? --> pid (process id) --> tipo specifico pid_t, ma è un intero
+A cosa serve la syscall getppid? --> ritorna il pid del padre di un processo, getpid invece ritorna l'id de 
+processo
+pid_t getpid(void); --> ritorna id del chiamate
+pid_t getppid(void); --> ritorna id del padre del chiamante
+
+Come viene creato un processo in UNIX
+Quale effetto ha la syscall fork? --> clonazione di processi --> al figlio restituisce 0, al padre 
+restituiscevil pid del figlio, se ritorna -1 --> errore --> fallisce se il numero massimo dei processi è 
+raggiunto i due procesi hanno vita propria, se il figlio finisce dopo la fine del padre diventa orfano
+(id padre = 1).
+pid_t fork(void);
+
+Come termina un processo UNIX? _exit(intero) e ritorna l'intero al padre del processo, convenzione: 
+intero = 0--> tutto ok, altrimenti errori
+
+Quale è lo scopo della syscall wait (o waitpid)? --> per far si che un processo ne aspetti un altro
+La funzione wait() sospende il processo corrente finche' un figlio (child) termina o finche' il processo 
+corrente riceve un segnale di terminazione o un segnale che sia gestito da una funzione.
+Quando un child termina il processo, senza che il parent abbia atteso la sua terminazione attraverso la 
+funzione di wait(), allora il child assume lo stato di "zombie" ossia di processo "defunto".
+Sono quindi processi che hanno terminato l'esecuzione, ma poiché il padre non ha fatto la wait, non sono stati
+rimossi dal process table.
+Se il processo corrente esegue la funzione di wait(), mentre ci sono uno o piu' child in stato di zombie, 
+allora la funzione ritorna immediatamente e ciascuna risorsa del child viene liberata.
+
+La funzione waitpid() sospende il processo corrente finche' il figlio (child) corrispondente al pid passato 
+in argomento termina o finche' il processo corrente riceve un segnale di terminazione o un segnale che sia 
+gestito da una funzione.
+Se il processo corrente esegue la funzione di waitpid() e il child identificato dal pid e' in stato di 
+zombie, allora la funzione ritorna immediatamente e ciascuna risorsa del child viene liberata.
+
+wait(&status) --> in status tramite un puntatore vengono messe informazioni sullo stato del figlio 
+WIFEXITED(status) --> ritorna true se il figlio è terminato normalmente, con exit o ritornando dal main
+WEXITSTATUS(status) è una macro che ritorna l'exit status (value) del processo figlio --> 8 bit meno 
+significanti dell'argomento status passato alla funzione exit(), andrebbe chiamata solo se WIFEXITED
+ritorna true
+
+pid_t wait(int *wstatus); --> ritorna l'ID del figlio terminato, -1 in caso di errore
+pid_t waitpid(pid_t pid, int *wstatus, int options); //wait(status) equivale a waitpid(-1, status, 0)
+--> come wait, ma se era accesa WNOHANG e non c'erano figli da attendere, ritorna 0.
+//pid --> pid del figlio da aspettare
+Può avere i seguenti valori:
+- < -1 --> aspetta un figlio qualsiasi che ha id del gruppo = valore assoluto di pid
+- -1 --> aspetta un figlio qualsiasi
+- 0 --> aspetta un figlio qualsiasi il cui id del gruppo è uguale a quello del chiamante al momento della
+system call
+- > 0 --> aspetta il figlio il cui id = pid, praticamente come la prima opzione solo che qui si guarda 
+l'id del processo e non del gruppo
+
+//options --> OR di una o più delle seguenti costanti:
+- WNOHANG --> ritorna subito se nessun figlio ha terminato
+- WUNTRACED --> ritorna se un figlio si è fermato (ma non con ptrace())
+- WCONTINUED --> ritorna se un figlio stoppato riparte tramite SIGCONT
+
+Cosa sono i processi zombie e perché esistono? Quando termina senza che il padre lo attendesse con wait, 
+il processo rimane nella tabella processi, pur essendo terminato, poiché non riesce a inviare in valore di
+_exit() al padre, rimane li fino a quando non viene eseguita una wait, alla terminazione del padre, 
+i processi figli in stato di "zombie" vengono adotatti da init(1) --> esegue una wait --> libera processi 
+zombie.
+Cosa succede alla terminazione di un processo orfano? Anche in questo caso il processo viene adottato 
+da init, il quale attende il processo con wait per poterlo liberare correttamente.
+init è il primo processo che viene avviato, serve per far partire tutti gli altri processi, ha id = 1.
+
+Come si lancia l'esecuzione di programmi? La syscall execve e tutte
+le funzioni sorelle nella libreria C: exec* --> non crea un processo, ma realizza l'esecuzione
+primo argomento --> path del programma
+secondo argoemnto --> array di puntatori a stringhe da passare al nuovo programma come argomenti 
+command-line terzo argomento in input serve per dare delle configurazioni, deve terminare con puntatore NULL
+execve() does not return on success, and the text, initialized data, uninitialized data (bss), and stack
+of the calling process are overwritten according to the contents of the newly loaded program
+
+se l'exec ha successo il resto del programma non viene eseguito poiché il programma che chiama exec viene
+completamente sovrascritto da il programma lanciato da execve.
+
+Funzioni della famigliac exec* :
+- int execl(const char *pathname, const char arg1*, ... , const char argn*, NULL);
+	arg1 è il nome del file che viene eseguito (parte finale di pathname).
+	l --> argomenti passati come lista
+- int execlp(const char* file, const char arg1*, ... , const char argn*, NULL);
+	p --> uso la variabile di sistema PATH, devo passare alla funzione solo il nome del file, senza path, 
+	se passo un carattere / --> PATH ignorata, ricerca classica con pathname.
+- int execle(const char *pathname, const char *arg, ..., const char *argn, NULL, char *const envp[]);
+	e --> array di puntatori a stringhe null-terminated, deve terminare con un null-pointer, serve per
+	specificare variabili d'ambiente valide solo per il processo che verrà eseguito,
+	esempio:
+	char *env_vars[] = {
+        "PATH=/usr/bin:/bin",  // Example environment variable
+        "HOME=/home/user",     // Another example environment variable
+        NULL                    // The array must be terminated with a NULL pointer
+    };
+- int execv(const char *pathname, char *const argv[]);
+	v --> argomenti passati come vettore, deve terminare con NULL, primo = nome file (come l)
+- int execvp(const char* file, char *const argv[]);
+- int execve(const char *pathname, char *const argv[], char *const envp[]);
+
+GESTIONE FILE SYSTEM --> operazioni su directory, permessi, ....
+currente working directory --> directory da cui opera un processo
+spostamento fra le directory del filesystem --> chdir, getcwd --> la secondo non è una vera e propria
+system call --> esecuzione di alcune operazioni aggiuntive non legate al SO
+char *getcwd(char buf[.size], size_t size); --> copia il percorso assoluto nel buffer buf di dimensione size
+int chdir(const char* path); --> la directory passata in path diventa la nuova cwd, se ha successo ritorna 0
+, -1 altrimenti
+creazione/cancellazione di directory --> mkdir/rmdir
+int mkdir(const char *pathname, mode_t mode); --> cerca di creare la directory pathname con permessi mode,
+che vengono modificati dalla umask nel seguente modo: mode & ~umask & 0777 --> permessi effettivi,
+ritorna 0 in caso di successo, -1 altrimenti errrno viene settato per inidcare l'errore,
+errno --> variaile globale aggiornata automaticamente che indica il tipo di errore, includi <errno.h>
+link --> realizzazione di link
+int link(const char *oldpath, const char *newpath); --> ritorna 0 in caso di successo, -1 altrimenti e errno
+aggiornato di conseguenza
+symlink --> realizzazione di link simbolici
+int symlink(const char *target, const char *linkpath); --> ritorna 0 in caso di successo, -1 altrimenti e 
+errno aggiornato di conseguenza
+
+Symlink vs Link --> link non occupano spazio aggiuntivo, condividono il contenuto con il file originale,
+link simbolici invece sono file a parte, che occupano spazio sul disco, cambiamenti a link simbolici
+non influenzano il file iniziale
+
+readlink --> visualizzazione target di un link simbolico
+ssize_t readlink(const char *path, char *buf, size_t bufsiz); --> mette il contenuto del link simbolico 
+in buf
+, se buf è troppo piccolo viene troncato, ritorna il numero di byte memorizzati in 
+unlink --> rimuove link non simbolici, se rimuove l'ultimo hard link, verrà eliminato anche il file
+int unlink(const char *pathname); --> ritorna 0 in caso di successo, -1 altrimenti e 
+errno aggiornato di conseguenza
+rename --> non equivale a link(vecchio, nuovo) + unlink(vecchio) --> NO atomicità, qualche altro processo 
+potrebbe modificare il nome di nuovo o vecchio fra link e unlink --> operazione fallisce
+int rename(const char *oldpath, const char *newpath); --> rinomina il file ed eventualmente lo sposta se 
+necessario, se newpath esisteva già viene rimpiazzato, se oldpath e newpath sono hard link linkati allo 
+stesso file, la funzione non fa nulla e ha esito positivo. Se oldpath è una directory, newpath deve non 
+esistere o essere una directory vuota. Se oldpath è un link simbolico, il link viene rinominato, se newpath
+è  un link simbolico, il link viene sovrascritto.
+
+stat --> statistiche di tutti i tipi, dim., tipo, numero, nel file system, prop. permessi, 
+date varie (ultima accesso, modifica, creazione) ...
+mknod --> creazione di un node del file system --> poi può diventare un file speciale o anche un file 
+normale
+
+chmod --> cambio permessi di un file
+Permessi
+12 bit divisi in 4 blocchi:
+i primi 3 non si vedono mai, gli altri 9 sono rwxrwxrwx
+Se è un file eseguibile ed è settato il primo bit (setusid) quando viene lanciato, il codice viene eseguito 
+come se fosse stato eseguito da un altro utente (root).
+Per le directory il secondo bit (setgid) --> i file nella directory vengono creati con gruppo della 
+directory
+
+Terzo bit --> sticky, usato solo nelle directory --> se acceso evita che un utente elimini file di altri 
+utenti
+Bit 4-6 --> permessi del proprietario
+Bit 7-9 --> permessi del gruppo 
+Bit 10-12 --> permessi per gli altri utenti nel sistema 
+
+chown --> cambio proprietario o gruppo di un file
+int chmod(const char *pathname, mode_t mode); --> mode si ottiene dall'OR delle seguenti flag:
+The new file mode is specified in mode, which is a bit mask
+       created by ORing together zero or more of the following:
+
+       S_ISUID  (04000)
+              set-user-ID (set process effective user ID on execve(2))
+
+       S_ISGID  (02000)
+              set-group-ID (set process effective group ID on execve(2);
+              mandatory locking, as described in fcntl(2); take a new
+              file's group from parent directory, as described in
+              chown(2) and mkdir(2))
+
+       S_ISVTX  (01000)
+              sticky bit (restricted deletion flag, as described in
+              unlink(2))
+
+       S_IRUSR  (00400)
+              read by owner
+
+       S_IWUSR  (00200)
+              write by owner
+
+       S_IXUSR  (00100)
+              execute/search by owner ("search" applies for directories,
+              and means that entries within the directory can be
+              accessed)
+
+       S_IRGRP  (00040)
+              read by group
+
+       S_IWGRP  (00020)
+              write by group
+
+       S_IXGRP  (00010)
+              execute/search by group
+
+       S_IROTH  (00004)
+              read by others
+
+       S_IWOTH  (00002)
+              write by others
+
+       S_IXOTH  (00001)
+              execute/search by others
+
+Per il comando da terminale invece:
+chmod [OPTION]... MODE[,MODE]... FILE... --> modo più comodo:
+chmod octoctoct nomeFile --> oct = 0...7 --> tre valori --> owner, group, others
+Esempio --> chmod 643 file --> owner ora può fare r,w ma non x, gruppo può fare solo r, gli altri possono
+fare w,x ma non r
+
+umask --> i bit accessi nell'umask vengono spenti nei permessi, anche se ho già specificato i permessi in 
+open i permessi reali saranno premessi & ~Umask
+int umask(mode_t mask) --> setta mask come nuova maschera e ritorna quella vecchia, umask = mask & 0777
+open crea file con permessi 666 e durectory con permessi 777, poi modificati dalla umask
+
+mount/umount2 --> aggiunta/eliminazione di sottoalberi al file system --> aggiunta di file system esterni 
+come device usb, dischi e partizioni
+
+truncate --> modifica l'ampiezza di un file, con stat dopo la truncate osservo che i blocchi allocati non 
+sono aumentati --> allocazione di memoria solo se serve per contenere informazioni
+Le varianti 'l-' delle syscall: lstat, lchown, lchmod --> se il pathname è un link agiscono sul link
+stesso, se le faccio senza l su un link agisco sul file
+
+Le varianti con 'at' alla fine (mkdirat, renameat, symlinkat, readlinkat, unlinkat, ...) --> invece di un 
+path prendono in input un file descriptor, se alle funzioni at viene passato un path relativo si assume che
+esso sia relativo al file descriptor passato in input, se il path è assoluto il fd viene ignorato
+
+Le varianti 'f-' delle syscall di gestione del file system: fstat, fchown, fchmod, ftruncate, fchdir --> 
+operano sui descrittori dei file per lavorare sui file veri e propri
+
+GESTIONE FILE --> operazioni sui file tramite descrittori: lettura, scrittura, ...
+L'aperura di un file restituisce un intero detto descrittore che consente di realizzare le varie operazioni
+di lettura e modifica del file
+open --> aperuta file con valore di ritorno che è il fd
+int open(const char *pathname, int flags, ...
+                  /* mode_t mode */ ); --> opzionale, è la mode dei permessi del file nel caso fosse creato
+				  --> possibile se O_CREAT è specificato nei flag
+il valore di ritorno è sempre il più basso possibile > 0, usato dalle altre system call per interagire con 
+il file interessato.
+Le flag devono includere una di queste modalità di apertura O_RDONLY, O_WRONLY, or O_RDWR, alle quali si 
+possono aggiungere tramite OR O_CLOEXEC, O_CREAT, O_DIRECTORY, O_EXCL, O_NOCTTY, O_NOFOLLOW, O_TMPFILE, e 
+O_TRUNC
+O_APPEND --> apertura file in append mode, prima di ogni write l'offset del file viene messo alla fine
+O_ASYNC --> Enable signal-driven I/O: generate a signal (SIGIO by default, but this can be changed via fcntl
+when input or output becomes possible on this file descriptor.  
+O_CLOEXEC (since Linux 2.6.23) --> il file descriptor sarà chiuso nel caso il processo che l'ha creato 
+dovesse eseguire un exec* --> in questo modo il fd non viene ereditato dal programma che parte con l'exec*
+O_CREAT --> se il pathname non esiste, viene creato il file, serve l'argomento aggiuntivo mode, 
+se questa flag non c'è, mode viene ignorato
+O_DIRECTORY --> se pathname non è una directory, la call fallisce
+O_LARGEFILE --> consente l'apertura di file la cui dimensione non sta in off_t, ma necessita di off64_t
+O_NOFOLLOW --> se pathname indica un link simbolico, la open fallisce
+O_NONBLOCK or O_NDELAY --> apertura del file in non-blocking mode, le successive operazioni I/O su questo fd
+non faranno attendere il processo
+O_PATH (since Linux 2.6.39) --> consente di usare il fd anche per indicare una location nel filesystem 
+(operazioni 'at') --> si passa alla funzione il fd della directory e poi la stringa del nome del file.
+O_TMPFILE (since Linux 3.11) --> se pathname è una directory, cread un inode temporaneo che verrà eliminato
+alla chiusura dell'ultimo file descriptor
+O_TRUNC --> se il file esiste ed è aperto una modalità di scrittura, viene troncato a lunghezza 0
+
+Lettura e scrittura vengono eseguite su buffer (sequenze di bit)
+dup --> duplicazione di descrittori, ritorna il più piccolo descrittore non aperto.
+
+fd standardizzati:
+0 --> input
+1 --> output
+2 --> error
+
+Cosa succede ai file aperti quando un processo esegue una fork? -->  
+Cosa succede ai file aperti quando un processo esegue una exec? --> 
+La fork copia il processo e quindi anche le strutture dati di esso --> copia della fd table --> viene
+ereditato anche il file descriptor --> ATTENZIONE l'open fd e il file buffer NON vengono clonati
+--> sono strutture riservate del SO --> se un processo effettua cambiamenti, anche l'altro processo li 
+subirà, operazioni che lavorano solo sul fd come dup o close non influenzano l'altro processo
+Se uno dei due processi esegue una exec non cambia nulla, il processo è sempre quello, cambia solo ciò
+che sta eseguendo --> ha comunque accesso al fd --> può essere evitato aggiungendo la flag O_CLOEXEC
+--> chiusura fd prima che il nuovo programma sia caricato
+Scopo della syscall close. --> chiusura descrittore, se il descrittore era l'ultimo descrittore aperto,
+allora le risorse associate al file aperto vengono liberate.
+Le system calls read e write --> lettura e scrittura file
+Lettura
+ssize_t read(int fd, void *buf, size_t count); --> cerca di leggere count bytes dal file descriptor fd, che 
+vengono copiati in buf. Ritorna il numero di bytes effettivamente letti, ritorna 0 --> EOF, -1 --> errore.
+Scrittura
+ssize_t write(int fd, const void *buf, size_t count); --> scrive fino a count bytes, presi dal buffer buf,
+in the file refferre by fd. Se il file è stato aperto con O_APPEND, l'offset del file è settato alla fine
+prima della scrittura. Per un file su cui può essere chiamata lseek, la scrittura inizia da dove è stato 
+settato l'offset. Ritorn il numero di bytes effettivamente scritti, -1 --> errore. 
+Sia per read e write, errno viene aggiornato in caso di errore.
+La dimensione dovrebbe sempre essere un potenza del 2 abbastanza alta --> evito meno chiamate -->
+riduzione spreco risorse del SO.
+Gestione di buffer multpli --> readv --> copia della lettura da file posta in più buffer.
+writev --> da un buffer scrivo più file.
+pread e pwrite --> read e write con possibilità di impostare l'offset dopo cui iniziare le operazioni di 
+lettura e scrittura --> utili nel multithreading --> garanzia di accesso atomico e modifica contemporanea
+dello stesso file (in punti diversi ovviamente).
+
+Qual è il funzionamento di lseek? Come vengono gestiti le lseek oltre la fine del file? Spostamento 
+all'interno del file, read e write si muovono in modo sequenziale, tuttavia non posso andare subito in 
+una posizione specifica.
+lseek(file, offset, tipologia) --> tipologia --> SEEK_SET (offset_f = offset), 
+SEEK_CUR (offset_f += offset), SEEK_END (offset_f = size(file) + offset), posso andare anche 
+oltre la fine del file --> se scrivo oltre la fine, la lettura dello spazio tra fine e le 
+cose che ho appena scritto ritornerà byte nulli, ovvero ('\0')
+comando od --> od nomeFile --> mostra il file byte per byte in formato ottale
+int fcntl(int fd, int cmd, ..., /* arg */); --> perform operation described by cmd on fd, arg --> argomento
+opzionale --> serve ad alcuni delle operazioni realizzabili su fd. Valore di ritorno: valore ottenuto 
+applicando cmd a fd. Possibili operazioni:
+  - Duplicating a file descriptor
+      - F_DUPFD (int) --> duplica il fd usando l'intero più basso disponibile e lo ritorna.
+      - F_DUPFD_CLOEXEC (int; since Linux 2.6.24) --> come sopra ma aggiunge la flag O_CLOEXEC
+  - File descriptor flags
+      - F_GETFD (void) --> ritorna le flag attuali del fd
+      - F_SETFD (int) --> setta le flag del fd, serve argomento opzionale per passare le nuove flag
+              Set the file descriptor flags to the value specified by arg.
+  - File status flags
+      Duplicated file descriptors (made with dup(2), fcntl(F_DUPFD), fork(2), etc.)
+      refer to the same open file description, and thus share the same file status flags.
+      - F_GETFL (void) --> ritorna le status flag del file
+      - F_SETFL (int) --> setta file status flag, serve quindi il terzo parametro
+  - Per altro vedi man
+int ioctl(int fd, unsigned long request, ...); --> manipola i oarametri di file speciali (device I/O)
+
+
+esempio --> ls > ciao
+1) fork del processo
+2) nel figlio sostituisco ciao allo std out
+3) exec del figlio
+
+UTENTI E GRUPPI UNIX --> 3 tipi di id per gruppi e utenti --> reale, salvato e effettivo:
+- reale --> ID dell'utente che ha avviato l'operazione, specifica i documenti accessibili all'operazione
+- effettivo --> identico al reale, ma può subire modifiche per consentire a un utente non privilegiato di 
+usare documenti di norma accessibili solo a utenti privilegiati come root --> usato dal sistema per capire
+se è consentito o meno svolgere una determinata task
+- salvato --> quando un processo con determinati privilegi deve eseguire una task per cui essi non servono
+--> ID effettivo messo in salvato e poi cambiato in un ID senza privilegi, finita la task all'ID effettivo
+viene riassegnato il valore salvato
+
+Syscall relative: getuid, setuid, getgid, setgid, geteuid, seteuid, getreiud, setreuid, getresuid, 
+setresuid, getresgid, setresgid, getgroups, setgroups
+
+SEGNALI
+Segnali a disposizione dell'utente SIGUSR1 e SIGUSR2.
+Lista completa dei segnali:
+       Signal      Standard   Action   Comment
+       ────────────────────────────────────────────────────────────────────────
+       SIGABRT      P1990      Core    Abort signal from abort(3)
+       SIGALRM      P1990      Term    Timer signal from alarm(2)
+
+       SIGBUS       P2001      Core    Bus error (bad memory access)
+       SIGCHLD      P1990      Ign     Child stopped or terminated
+       SIGCLD         -        Ign     A synonym for SIGCHLD
+       SIGCONT      P1990      Cont    Continue if stopped
+       SIGEMT         -        Term    Emulator trap
+       SIGFPE       P1990      Core    Floating-point exception
+       SIGHUP       P1990      Term    Hangup detected on controlling terminal
+                                       or death of controlling process
+       SIGILL       P1990      Core    Illegal Instruction
+       SIGINFO        -                A synonym for SIGPWR
+       SIGINT       P1990      Term    Interrupt from keyboard
+       SIGIO          -        Term    I/O now possible (4.2BSD)
+       SIGIOT         -        Core    IOT trap. A synonym for SIGABRT
+       SIGKILL      P1990      Term    Kill signal
+       SIGLOST        -        Term    File lock lost (unused)
+       SIGPIPE      P1990      Term    Broken pipe: write to pipe with no
+                                       readers; see pipe(7)
+       SIGPOLL      P2001      Term    Pollable event (Sys V);
+                                       synonym for SIGIO
+       SIGPROF      P2001      Term    Profiling timer expired
+       SIGPWR         -        Term    Power failure (System V)
+       SIGQUIT      P1990      Core    Quit from keyboard
+       SIGSEGV      P1990      Core    Invalid memory reference
+       SIGSTKFLT      -        Term    Stack fault on coprocessor (unused)
+       SIGSTOP      P1990      Stop    Stop process
+       SIGTSTP      P1990      Stop    Stop typed at terminal
+       SIGSYS       P2001      Core    Bad system call (SVr4);
+                                       see also seccomp(2)
+       SIGTERM      P1990      Term    Termination signal
+       SIGTRAP      P2001      Core    Trace/breakpoint trap
+       SIGTTIN      P1990      Stop    Terminal input for background process
+       SIGTTOU      P1990      Stop    Terminal output for background process
+       SIGUNUSED      -        Core    Synonymous with SIGSYS
+       SIGURG       P2001      Ign     Urgent condition on socket (4.2BSD)
+       SIGUSR1      P1990      Term    User-defined signal 1
+       SIGUSR2      P1990      Term    User-defined signal 2
+       SIGVTALRM    P2001      Term    Virtual alarm clock (4.2BSD)
+       SIGXCPU      P2001      Core    CPU time limit exceeded (4.2BSD);
+                                       see setrlimit(2)
+       SIGXFSZ      P2001      Core    File size limit exceeded (4.2BSD);
+                                       see setrlimit(2)
+       SIGWINCH       -        Ign     Window resize signal (4.3BSD, Sun)
+
+       The signals SIGKILL and SIGSTOP cannot be caught, blocked, or ignored.
+
+
+int kill(pid_t pid, int sig); --> invia un segnale a qualsiasi pid o gid.
+pid > 0 --> segnale inviato a ID uguale a pid
+pid == 0 --> segnale inviato a ogni processo nel gruppo del chiamante
+pid == -1 --> segnale inviato a ogni processo a cui il chiamante ha permessi per inviare un segnale
+pid < -1 --> segnale inviato a ogni processo nel gruppo il cui ID è uguale a -pid
+sig == 0 --> nessun segnale inviato, ma vengono fatti i controlli dei permessi --> utile per capire se si 
+hanno o meno i permessi per inviare un segnale a un determinato id
+Ritorna 0 in caso di successo, -1 altrimenti con errno aggiornato come segue:
+- EINVAL --> segnale non valido
+- EPERM --> il chiamante non ha i permessi
+- ESRCH --> non esiste il processo o il gruppo a cui si vuole inviare il segnale.
+
+sighandler_t signal(int signum, sighandler_t handler); --> cambia molto tra versioni diverse di UNIX e Linux
+--> meglio usare sigaction: int sigaction(int signum, const struct sigaction *act, struct sigaction *oldact)
+--> usata per cambiare l'azione eseguita da un processo in caso di ricezioni di un determinato segnale.
+signum dev'essere diverso da SIGKILL  e SIGSTOP --> non posso cambiare il comportamento del processo in 
+caso di questi due segnali.
+
+act è la nuova azione da installare, prima di essere installata quella precedente verrà salvata in oldact.
+
+struct sigaction {
+  void     (*sa_handler)(int);
+  void     (*sa_sigaction)(int, siginfo_t *, void *);
+  sigset_t   sa_mask;
+  int        sa_flags;
+  void     (*sa_restorer)(void);
+};
+
+IMPORTANTE: assegnare valore solo a sa_handler o a sa_sigaction, in alcune versioni di linux sono 
+implementate con una union
+
+sa_hanlder --> specifica l'azione associata a signum e può essere:
+- SIG_DFL --> azione di default
+- SIG_IGN --> ignoro il segnale, no azione
+- puntatore a una funzione di gestione dei segnali, la funzione deve ricevere solo il numero del segnale
+come parametro
+
+sa_sigaction --> scelta se SA_SIGINFO è presente tra le sa_flags, in questo caso l'handler deve avere 3 
+parametri invece di 1:
+- un intero --> numero del segnale
+- un valore di tipo siginfo_t * --> struct che contiene info aggiuntive sul segnale 
+- un puntatore a una struct ucontext_t castato a void* --> struct che contiene info sul context del 
+segnale, salvate dal SO nello user-space stack. Non viene quasi mai utilizzato.
+
+sa_mask --> maschera di segnali che dovrebbero essere bloccati durante l'esecuzione della funzione che 
+gestisce il segnale --> realizza il mascheramento dei segnali
+
+sa_flags --> flag che modificano il comportamento del segnale. Un esempio è SA_SIGINFO, alte su man 2 signal
+
+Funzioni signal-safe --> funzioni che possono essere chiamate all'interno di un signal handler
+L'utilizzo di funzioni signal-safe è fondamentale nel multithreading --> interrupt del segnale, l'handler
+deve poter intervenire senza causare crash o comportamenti inaspettati del programma in esecuzione, 
+permettendogli di ripartire appena terminata la gestione del segnale. Le funzioni signal-unsafe esistono
+ugualmente in quanto hanno migliori performance in quanto non sfruttano tutti i meccanismi di 
+sincronizzazione delle funzioni signal-safe, altre funzioni non possono essere signal-safe per il modo 
+in cui necessitano di interagire con l'hardware o con il kernel, altre ragioni sono la difficoltà della
+trasformazione di una funzione da signal-unsafe a signal-safe.
+
+Definizione di insiemi di segnali:
+sigset_t --> struttura dati per rappresentare un insieme di Segnali --> è un intero, insieme = bitwise OR
+sigsuspend --> blocca l'esecuzione in attesa dei segnali specificati nell'insieme di segnali
+sigpending --> mette nel parametro sigset_t i segnali in attesa di essere ricevuti dal chiamante 
+int sigprocmask(int how, const sigset_t *set, const sigset_t *oldset); --> modifica la signal mask del 
+chiamante, il modo in cui agisce varia in base al parametro how:
+- SIG_BLOCK --> unione tra mask corrente e parametro set
+- SIG_UNBLOCK --> segnali del parametro set vengono rimossi dalla mask corrente
+- SIG_SETMASK --> la mask diventa il parametro set
+Se set == NULL --> no cambiamenti, how ignorato, ma viene ritornata la mask corrente in oldset.
+
+COMUNICAZIONE LOCALE FRA PROCESSI
+pipe() --> prende in input un array di 2 interi --> sono i fd per i file della pipe.
+pipe --> fornisce in output due fd che sono gli estremi del tubo --> 0 lato da cui si legge, 1 lato da cui 
+si scrive, è una connessione tra due processi tc stdout di uno diventa stdin dell'altro, è a senso unico -->
+solo uno scrive sulla pipe e solo uno legge da essa --> fisicamente la pipe è un'area di memoria trattata 
+come "virtual file", può essere utilizzata non solo dai due processi, ma anche dai rispettivi figli, 
+in caso di lettura prima di scrittura --> sospensione lettore, con l'esecuzione di pipe() trova le prime 
+due posizioni libera nella tabella dei file aperti del processo e  vi assegna il punto di inizio e fine 
+della pipe(write, read). Le pipe hanno comportamento FIFO, read viene sospesa se l'altro processo ha la 
+pipe aperta in scirttura.
+named pipe --> consentono comunicazione fra processi indipententi, mkfifo --> crea una named pipe, prima 
+lettera in ls -l è infatti una p, system call per fare named pipe è la stessa per fare device  
+
+Esempio 
+  int fd[2]; //first is for reading, second is for writing
+  pipe(fd);
+  //ora devo forkare --> perché dopo --> fork --> fd copiati ed ereditati dal nuovo processo, ma sono
+  //due fd indipendenti se uno rimane aprto l'altro può essere chiuso, pur essendo per lo stesso file 
+  if(id == 0) {
+    close(fd[0]); //non devo leggere, per sicurezza chiudo subito
+    int x;
+    scanf("%d", &x);
+    write(fd[1], &x, sizeof(int));
+    close(fd[1]); //necessario
+  }
+  else {
+    close(fd[1]);
+    int y, status;
+    read(fd[0], &y, sizeof(int));
+    close(fd[0]);
+    printf("Received from child, %d\n", y);
+  }
+
+Comunicazione 2-way tra due processi con le pipe --> ne servono 2, perché con 1 pipe sola se entrambi i 
+processi fanno la read, non ho la certezza di quale dei due andrà per primo --> race condition
+1 pipe per comunicazione child-parent e 1 per parent-child
+
+named pipes --> creazione file con mkfifo(path, 0777); in seguito il file va aperto con open 
+--> posso aprirlo per scrittura o lettura, all'apertura rimane bloccato fino a quando non viene aperta anche
+l'altra estremità (lettura se avevo aperto in scrittura e viceversa). 
+
+Comunicazione tra processi tramite named pipes --> Vedi esempio su github (Pratico SO)
+
+Comportamento definitivo dei pipes (named e non) è:
+- la open blocca se l'altra estremità non viene aperta
+  * per unnamed pipes questo non accade in quanto la pipe viene creata e aperta dalla stessa call
+  * per le fifo un altro processo deve aprire il file
+- la read blocca se non c'è da leggere E se l'altro lato è aperto in scrittura
+- la read non blocca per pipe "rotti", ossia quando l'altro lato chiude il file descriptor del lato per scrivere
+- non so cosa faccia la write ma non importa perché il blocco sarebbe allo stage di apertura
+Vedi video code vault su yt.
+
+ATTESA DI EVENTI
+poll, ppoll --> attesa di qualche evento da più file descriptor,
+sintassi: poll(struct pollfd* fds, nfds_t nfds, int timeout)
+struct pollfd{
+	int fd; //descrittore
+	short events; //bitmask per esprimere gli eventi in attesa
+	short revents; //risposta dopo che si sono verificati gli eventi --> eventi che sono successi davvero
+}
+valore di ritorno --> numero di struct che hanno revents != 0 --> numero di descrittori per cui si sono 
+verificati eventi o errori
+in futuro si userà epoll
+
+
+
+NETWORKING: BErkeley sockets
+socket --> crea un fd per fare comunicazione di rete, parametri: dominio, tipo --> specifica semantica di 
+comunicazione,
+protocollo, bind, listen, accept, connect, sendto, recvfrom, sendmsg, recvmsg, sengmmsg, recvmmsg, 
+shutdown, getsockname,
+getpeername, socketpair --> consente di fare, usando l'interfaccia socket, delle pipe bidirezionali, 
+getsockopt, setsockopt
+
+ALTRO
+gestione del tempo: time, gettimeofday, settimeofday, nanosleep, setitimer, getitimer
+memory mapping: mmap, mremap, munmap
+usi speciali di file descriptor: eventfd, signalfd, pidfd, timerfd...
+gurdie sul file system: inotify

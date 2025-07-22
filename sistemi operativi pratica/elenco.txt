@@ -1,0 +1,116 @@
+2021.02.17
+es1 --> analisi directory entry per capire se entry è un link simbolico, lettura link ed eventuale rimozione, lavoro con snprintf per preparare i path 
+es2 --> analisi directory entry per capire se entry è un link simbolico, lettura link ed eventuale rimozione, lavoro con snprintf per preparare i path
+creazione hard link, con ulteriore lavoro con snprintf per preparare i path + "accorciamento stringa" (inserendo '\0' prima)
+es3 --> lettura file, controllo eseguibile, list.sort con lambda, os.path.getmtime(path) per sapere ultima modifica
+
+20210916
+es1 --> inotify + execvp + fork + lavror su stringa per formattarla in array di stringhe per execvp
+es2 --> inotify + execvp + fork + lavror su stringa per formattarla in array di stringhe per execvp + dup2
+
+2022.06.08
+es2 --> lavoro con symlink, readlink, unlink, lstat per controllare se file è link o meno
+es3 --> utilizzo di psutils per nome esegiubile, lista pid attivi e ottenere uids di un processo, lettura 
+occupazione di memoria direttamente dalla lettura del file /proc/PID/status trovando la riga con 
+line.startswith e ottengo valore rimuovendo il prefisso della riga con line.removeprefix
+
+2022.06.22
+es1 --> segnali con sigqueue, sigaction, allegato di un messaggio al segnale con union sigval.sigval_ptr --> è un void* che occupa quindi 64 bit, ma qui
+va usato come variabile non come puntatore --> scrivo i suoi 8 bit castando il puntatore della stringa di 8 byte (64 bit) al puntatore a un intero a 64 bit
+e dereferenzio questo puntatore e casto il valore int64_t a void* --> fatto, la lettura avviene esaminando ogni carattere della stringa/intero/void* 
+--> 8 iterazioni ad ognuna esamino gli ultimi 8 bit con % 256 e poi divido il messaggio (castato da void* a int64_t) per 256. 
+es2 --> come es1, ma devo usare segnali real time affiché essi vengano accodati, altrimenti li perdo
+es3 --> subprocess con file e dizionari per avere file catalogati in base all'ouput del comando
+
+2022.07.22 
+es2 --> realizzazione grafica del fs di una directory senza concatenare stringhe --> openat, fdopendir, dirent per 
+vedere le varie entry della directory in esame, controllo se entry è directory o meno
+es3 --> esecuzione di script, ma solo script non ELF (subprocess.run(script_path)) 
+
+2022.09.07 
+es1 --> fork, waitpid, execvp da argv e analisi status figlio terminato
+es2 --> fork, waitpid, execvp da argv e analisi status figlio terminato + implementazione di timer con gettimeofday 
+es3 --> controllo su ELF e utilizzo os.path.getsize()
+
+2023.01.19
+-es1, es2 --> pipe, execvp per esecuzione, dup2 per redirezione i/o fra le pipes, fgets per lettura stdin, strtok per tokenizzare 
+una stringa dato un carattere separatore.
+-es3 --> esplorazione ric. fs, creazione directory, copia file, append file
+
+2023.01.23
+- es1 --> named pipe --> open read (se ritorna 0 altro estremo chiuso),
+- es2 --> come sopra + invio di segnali con kill e ricezione custon nella prova
+- es3 --> copia di file, scansione di directory e filtraggio directory
+
+2023.02.16
+es1--> fork per copia parallela del file
+es2--> getopt per scegliere il parallelismo
+es3--> counter di caratteri per riga di tutti i file
+
+2023.05.31
+-es1 --> lettura cartella /proc/PID con analisi dei file per leggere i contenuti di cmdline confrontarlo 
+con la stringa in input --> utilizzo di memcmp 
+-es2 --> non fatto, uguale a es2 20240530
+-es3 --> dizionari, lettura link simbolici e lettura inode con os.Stat
+
+2023.06.14
+- es1 --> utilizzo timer con epoll --> epoll_event, epoll_create1, timerfd_create, timerfd_settime, epoll_ctl 
+- es2 --> utilizzo timer multipli insieme con epoll, gestione argv e argc senza creare array aggiuntivi
+- es3 --> rimozione dal sottoalbero tutti i file con link simbolici relativi e non assoluti
+
+2023.07.20
+-C --> copia fs in C, copia di file e utilizzo di hard link, uso di stat per vedere ultima modifica
+-script python --> controllo caratteri ascii, subprocess con ls
+
+2023.09.14
+-es1, es2 allocazione dinamica con malloc di un array dis tringeh char**, controllo tipo directory entry
+-es3 lettura symlink + visita del fs
+
+2024.01.19
+- es1 --> concatenzione di stringhe con terminatore di stringa, da cui ricavare array di stringhe per excecvp
+- es2 --> named pipe che riceve la stringa di comandi come formattata sopra, ricavare array di stringhe per excecvp ed esecuzione
+- es3 --> lavoro con path e visita fs, operazioni con set, uso di sys.argv, uso di operazioni split e join
+
+2024.02.14
+-C --> navigazione fs ricorsiva, uso di access per vedere se file è eseguibile o no, controllo se è bash(#!), o se è ELF (elf magic work)
+-C --> simile  asopra, solo che quando trovo un eseguibile con il nome giusto lo esegue con i suoi parametri (execvp e fork), e lo eseguo nella sua directory corrente (chdir)
+non funziona l'ordine di esecuzione dall'alto al basso del fs
+-pyhton --> subprocess con file, dizionari, os per ottenere directory e file della current directory
+-bash --> array associativi
+
+2024.05.30
+-es1, es2 --> execvp e execvpe, con clonazione di un processo leggendo le sue info da proc/PID/cmdline e proc/PID/exe 
+-es3 --> utilizzo di psutil per raccogliere i processi in base a pid e path dell'eseguibile, dizionari
+
+2024.06.25
+es1 --> inotify con aggiunta di file a una directory, parsing di stringhe per execv, fork 
+es2 --> qualche problema...
+es3 --> dizionari, subprocess con ls -l, symlink, mkdir
+
+2024.07.23
+es1--> creazione directory e spostamenti dalla sottodirectory alla directory con rename
+es2 --> esercizio inverso
+es3 --> cancellazione di sha1 da due directory python
+
+2024.09.11 
+es1-> timeout termina se supera un tempo prefissato. doppio timer. fork e poll pidfd_open
+es2-> se termina con un errore allora viene riattivato
+es3-> suddivisione link simbolici del sottoalbero in interni/ esterni
+
+
+2025.1.21
+es1--> stampa file con stessa ampiezza in byte ma non link fisici
+es2 --> elenco link simbolici che puntano a f
+es3-> elenco file ordinati per profondità (relpath)
+
+2025.2.21
+es1--> link simbolici e hardlink con opzione -s, -la
+es2--> elenco file con stesso contenuto, prefisso comune di -p byte.
+es3--> elenco file con stesso peso in byte.
+
+
+2025.06.24
+es1--> trasmissione di una stringa bit per bit mediante kill e SIGURS1 e SIGURS2. uso di sigaction per prendere il segnale
+es2-->  ricezione da molteplici. Rallentamento ad arte.
+es3--> script che aggiunge qualche riga di commento all'inizio dei file (f.seek).
+
